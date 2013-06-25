@@ -2,6 +2,7 @@ package com.swan.swanflickruploader;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
@@ -19,6 +20,8 @@ import com.flickr4java.flickr.auth.Auth;
 import com.flickr4java.flickr.auth.AuthInterface;
 import com.flickr4java.flickr.auth.Permission;
 import com.flickr4java.flickr.photos.PhotosInterface;
+import com.flickr4java.flickr.photosets.Photoset;
+import com.flickr4java.flickr.photosets.PhotosetsInterface;
 import com.flickr4java.flickr.uploader.UploadMetaData;
 import com.flickr4java.flickr.uploader.Uploader;
 import com.flickr4java.flickr.util.AuthStore;
@@ -55,6 +58,15 @@ public class Upload {
                 .println("Thanks.  You probably will not have to do this every time.");
     }
 
+    public Upload(String apiKey, String secret, String nsid, File authsDir) throws FlickrException, IOException {
+        flickr = new Flickr(apiKey, secret, new REST());
+        this.nsid = nsid;
+
+        if (authsDir != null) {
+            this.authStore = new FileAuthStore(authsDir);
+        }       
+    }
+    
     public Upload(File authsDir) throws FlickrException, IOException {
         Properties properties;
         InputStream in = null;
@@ -75,6 +87,47 @@ public class Upload {
         }
     }
 
+    private void uploadFiles(String name, File[] fileList) {
+        InputStream in = null;
+        Uploader uploader = flickr.getUploader();
+        PhotosetsInterface psint = flickr.getPhotosetsInterface();
+        Photoset photoset = null; // psint.create(name, null, null);
+        System.out.println("# New Set : " + name);
+        
+        for (int j = 0; j < fileList.length; j++) {
+            if (fileList[j].isFile()) {
+                System.out.println("  Uploading : " + fileList[j].getName());
+
+                try {
+                    in = new FileInputStream(fileList[j]);
+                    UploadMetaData metaData = new UploadMetaData();
+                    metaData.setPublicFlag(false);
+                    metaData.setHidden(true);
+
+                    // check correct handling of escaped value
+                    metaData.setTitle(fileList[j].getName());
+                    String photoId = uploader.upload(in, metaData);
+
+                    // add to Photoset
+                    if (name != null) {
+                        if (photoset == null) {
+                            photoset = psint.create(name, "", photoId);
+                        } else {
+                            psint.addPhoto(photoset.getId(), photoId);
+                        }
+                    }
+                } catch (FileNotFoundException e) {
+                    e.printStackTrace();
+                } catch (FlickrException e) {
+                    e.printStackTrace();
+                } finally {
+                    IOUtilities.close(in);
+                }
+
+            }
+        }
+    }
+    
     public void upload(File directory) throws IOException, SAXException,
             FlickrException {
         RequestContext rc = RequestContext.getRequestContext();
@@ -87,56 +140,40 @@ public class Upload {
                 rc.setAuth(auth);
             }
         }
-
-        // 일단 사용자가 지정한 directory 밑에는 디렉토리들 존재하고
-        // 디렉토리 명을 세트명으로 하고 *.jpg 등 이미지 파일을 올리는 경우만 고려한다.
+        
         File[] contents = directory.listFiles();
 
-        Uploader uploader = flickr.getUploader();
-        PhotosInterface pint = flickr.getPhotosInterface();
-        InputStream in = null;
+        PhotosetsInterface psint = flickr.getPhotosetsInterface();
 
         for (int i = 0; i < contents.length; i++) {
             if (contents[i].isDirectory()) {
-                System.out.println("<<" + contents[i].getName() + ">>");
-                File[] list = contents[i].listFiles(new ImageFilenameFilter());
-
-                for (int j = 0; j < list.length; j++) {
-                    if (list[j].isFile()) {
-                        System.out.println("Uploading : " + list[j].getName());
-
-                        try {
-                            in = new FileInputStream(list[j]);
-                            UploadMetaData metaData = new UploadMetaData();
-                            metaData.setPublicFlag(false);
-                            metaData.setHidden(true);
-
-                            // check correct handling of escaped value
-                            metaData.setTitle(list[j].getName());
-                            String photoId = uploader.upload(in, metaData);
-
-                            // assertNotNull(photoId);
-                            // pint.delete(photoId);
-                        } finally {
-                            IOUtilities.close(in);
-                        }
-
-                    }
+                File[] fileList = contents[i].listFiles(new ImageFilenameFilter());
+                uploadFiles(contents[i].getName(), fileList);
+            } else {
+                
+                ImageFilenameFilter filter = new ImageFilenameFilter();
+                if (filter.accept(null, contents[i].getName())) {
+                    System.out.println("* Not in a set *");
+                    File[] fileList = {contents[i]};
+                    uploadFiles(null, fileList);
                 }
             }
         }
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 1) {
+        if (args.length < 4) {
             System.out
-                    .println("Usage: java -jar SwanFlickrUploader target_dir");
+                    .println("Usage: java -jar SwanFlickrUploader.jar api_key secret nsid target_dir");
             System.exit(1);
         }
 
-        Upload upload = new Upload(new File(System.getProperty("user.home")
-                + File.separatorChar + ".flickrAuth"));
+        Upload upload = new Upload(
+                args[0],
+                args[1],
+                args[2],
+                new File(System.getProperty("user.home") + File.separatorChar + ".flickrAuth"));
 
-        upload.upload(new File(args[0]));
+        upload.upload(new File(args[3]));
     }
 }
