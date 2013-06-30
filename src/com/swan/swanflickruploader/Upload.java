@@ -5,6 +5,7 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Iterator;
 import java.util.Properties;
 import java.util.Scanner;
 
@@ -19,8 +20,11 @@ import com.flickr4java.flickr.RequestContext;
 import com.flickr4java.flickr.auth.Auth;
 import com.flickr4java.flickr.auth.AuthInterface;
 import com.flickr4java.flickr.auth.Permission;
+import com.flickr4java.flickr.photos.Photo;
+import com.flickr4java.flickr.photos.PhotoList;
 import com.flickr4java.flickr.photos.PhotosInterface;
 import com.flickr4java.flickr.photosets.Photoset;
+import com.flickr4java.flickr.photosets.Photosets;
 import com.flickr4java.flickr.photosets.PhotosetsInterface;
 import com.flickr4java.flickr.uploader.UploadMetaData;
 import com.flickr4java.flickr.uploader.Uploader;
@@ -86,16 +90,77 @@ public class Upload {
             this.authStore = new FileAuthStore(authsDir);
         }
     }
+    
+    private Photoset findPhotoset(String name) {
+        if (name == null)
+            return null;
+        
+        Photosets photosets = null;
+        
+        try {
+            photosets = flickr.getPhotosetsInterface().getList(nsid, 0, 0);
+
+            Iterator<Photoset> sets = photosets.getPhotosets().iterator();
+
+            while (sets.hasNext()) {
+                Photoset set = (Photoset) sets.next();
+                if (set.getTitle().equals(name)) {
+                    return set;
+                }
+            }
+        } catch (FlickrException e1) {
+            e1.printStackTrace();
+        }
+
+        return null;
+    }
+    
+    private boolean findPhoto(PhotoList<Photo> photoList, String name) {
+        if (photoList == null || name == null)
+            return false;
+        
+        for (int i = 0; i < photoList.size(); i++) {
+            if (photoList.get(i).getTitle().equals(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     private void uploadFiles(String name, File[] fileList) {
         InputStream in = null;
         Uploader uploader = flickr.getUploader();
         PhotosetsInterface psint = flickr.getPhotosetsInterface();
-        Photoset photoset = null; // psint.create(name, null, null);
-        System.out.println("# New Set : " + name);
+        Photoset photoset = findPhotoset(name); // psint.create(name, null, null);
+        boolean bNewSet = (photoset == null ? true : false);
+        PhotoList<Photo> photoList = null;
+        
+        if (name != null) {
+            if (photoset == null) {
+                System.out.println("# New Set : " + name);
+            } else {
+                System.out.println("# Add to Set : " + name);
+                try {
+                    photoList = psint.getPhotos(photoset.getId(), 0, 0);
+                } catch (FlickrException e) {
+                    // TODO Auto-generated catch block
+                    e.printStackTrace();
+                }
+            }
+        }
         
         for (int j = 0; j < fileList.length; j++) {
             if (fileList[j].isFile()) {
+                // check uploaded photo
+                if (name != null) {
+                    if (bNewSet == false) {
+                        if (findPhoto(photoList, fileList[j].getName())) {
+                            System.out.println("  Already uploaded : " + fileList[j].getName());
+                            continue;
+                        }
+                    }
+                }
+                
                 System.out.println("  Uploading : " + fileList[j].getName());
 
                 try {
