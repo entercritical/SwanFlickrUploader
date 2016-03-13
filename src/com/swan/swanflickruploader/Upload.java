@@ -98,12 +98,12 @@ public class Upload {
         Photosets photosets = null;
         
         try {
-            photosets = flickr.getPhotosetsInterface().getList(nsid, 0, 0);
+            photosets = flickr.getPhotosetsInterface().getList(nsid);
 
             Iterator<Photoset> sets = photosets.getPhotosets().iterator();
 
             while (sets.hasNext()) {
-                Photoset set = (Photoset) sets.next();
+                Photoset set = sets.next();
                 if (set.getTitle().equals(name)) {
                     return set;
                 }
